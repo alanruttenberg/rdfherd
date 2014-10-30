@@ -1,0 +1,21 @@
+# http://module-build.sourceforge.net/META-spec.html
+#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
+name:         RDFHerd
+version:      1.18.1
+version_from: 
+installdirs:  site
+requires:
+    Cwd:                           0
+    DB_File:                       0
+    DBD::ODBC:                     0
+    DBI:                           0
+    File::Copy:                    0
+    Getopt::Long:                  0
+    Safe:                          0
+    Sys::Hostname:                 0
+    Term::ReadKey:                 0
+    Test::More:                    0
+    Time::HiRes:                   0
+
+distribution_type: module
+generated_by: ExtUtils::MakeMaker version 6.30

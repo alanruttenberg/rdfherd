@@ -1,0 +1,14 @@
+Tools for managing herds of RDF.
+
+Initially this just addresses the problem of managing a collection of data
+feeds keeping an RDF database up to date.  Also initially, the only
+supported database server is Virtuoso.
+
+If you're building a Neurocommons mirror, then you probably want to read
+the file "NEUROCOMMONS_INSTALL.txt" for installation instructions.
+
+If you're updating from a previous version of RDFHerd, be sure to read any
+applicable release notes at the top of the file "Changes".
+
+-----
+$Id: README 2289 2009-03-10 05:58:48Z bawden $

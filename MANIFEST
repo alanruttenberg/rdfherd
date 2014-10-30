@@ -1,0 +1,25 @@
+bin/rdfherd
+lib/RDFHerd.pm
+lib/RDFHerd/Utils.pm
+lib/RDFHerd/CacheUtils.pm
+lib/RDFHerd/Term.pm
+lib/RDFHerd/Log.pm
+lib/RDFHerd/Bundle.pm
+lib/RDFHerd/Server.pm
+lib/RDFHerd/Virtuoso/IniFile.pm
+lib/RDFHerd/Virtuoso/Server.pm
+lib/RDFHerd/CTest.pm
+config/rdfherd-config.pl		Sample config file
+config/virtuoso-server-Config.pl	Sample config file
+config/init_script.sh			LSB boot script
+README					A brief description
+Changes					Release notes
+INSTALL					How to install RDFHerd
+NEUROCOMMONS_INSTALL.txt		How to install a Neurocommons mirror
+LICENSE					Copyright and license
+MANIFEST				This list of files
+Makefile.PL
+t/00-load.t
+t/pod-coverage.t
+t/pod.t
+META.yml                                 Module meta-data (added by MakeMaker)

@@ -1,0 +1,30 @@
+
+[ Note: If you're building a Neurocommons mirror, then you probably want to
+  read NEUROCOMMONS_INSTALL.txt, rather than starting here. ]
+
+This module depends on the Perl modules "DBD::ODBC" and "DBI", which you will
+need to install first.
+
+Note that the DBD::ODBC Perl module requires one of two C libraries in
+order to function: you will need to install either the "unixODBC" package,
+or the "iODBC" package.  (Most people seem to use unixODBC.)
+
+To install this module, run the following commands:
+
+    perl Makefile.PL
+    make
+    make test
+    make install
+
+Once installed, you will need to create a /etc/rdfherd-config.pl file.
+Sample config files can be found in the "config" directory.
+
+What you do next depends on what you want to do.  If you're building a
+Neurocommons mirror, then the rest of the installation process is described
+in the file "NEUROCOMMONS_INSTALL.txt".
+
+If you're updating from a previous version of RDFHerd, be sure to read any
+applicable release notes at the top of the file "Changes".
+
+-----
+$Id: INSTALL 2289 2009-03-10 05:58:48Z bawden $

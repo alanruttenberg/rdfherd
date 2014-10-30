@@ -1,0 +1,164 @@
+
+			       Release 1.18.1
+
+Fix bug where graph clearing didn't actually work.
+
+			       Release 1.18
+
+Various mechanisms to allow us to work on top of different versions of a
+given server.  (Motivated by the fact that they changed the default set of
+indexes starting in Virtuoso 6.1.0.)
+
+Flexible load specifications.  If you make use of this feature by using
+structures in `load' in a bundle Config.pl file, you must also set the
+`class_version' to at least 4.
+
+Bug fixes.
+
+			       Release 1.17
+
+Multiple graphs per bundle.  If you make use of this feature by using
+`load_graphs' in a bundle Config.pl file, you must also set the
+`class_version' to at least 3.
+
+Improved Loaded.log file versioning.  Support for prehistoric Loaded.log
+format removed.
+
+Bug fixes.
+
+			       Release 1.16
+
+Allow entries in Bundle `load' parameter to be a directory meaning to load
+all files under that directory.
+
+Virtuoso 5.0.8 is now -required-.
+
+Bug fixes.
+
+			       Release 1.14
+
+Internal bugfix release: make it possible to access the State database and
+not signal an error if it is locked by somebody else.
+
+			       Release 1.13
+
+Added config_path, config_string and config_ref subcommands to rdfherd.
+Made --noquestions actually work.
+
+			       Release 1.12
+
+Added a new Config.pl setting for Virtuoso servers: result_set_max_rows.
+This controls the value of ResultSetMaxRows in the virtuoso.ini file, and
+sets it to 2 billion to work around a bug in Virtuoso 5.0.9 and 5.0.10.
+
+I fixed a bug in config/init_script.sh where it would fail to work unless
+the virtuoso user has his shell set to an actual Bourne-type shell.  If you
+copied the previous version, you might want to update your copy.
+
+If you are updating from an older version of RDFHerd, you should run
+
+  rdfherd /virtuoso/working/directory configure
+
+in order to update your Virtuoso configuration.
+
+			       Release 1.11
+
+The bundle_update sub-command now accepts a `--all' option.  If `--all' is
+specified, all of the bundles that the specified bundles depend upon are
+updated as well.
+
+Generally tidy things up before the first public release.
+
+			       Release 1.09
+
+bundle_update now offers to do a continue_update if it thinks that's what
+you probably want.
+
+Subbundles are now updated in a deterministic order: alphabetically (by
+default) or in the order written if you use an array ([...]) rather than a
+hash ({...}) in the Config.pl file.
+
+When debugging script files, the output now includes timestamps.
+
+Script files always run with log_enable(2).
+
+When trying to connect to the server, the rdfherd command now waits for the
+server to start responding.
+
+Bug fixes.
+
+			       Release 1.08
+
+Now a bundle Config.pl file can say:
+
+    no_need_to_clear_version => 5,
+
+to indicate that updating from any version -before- version 5 of this
+bundle requires that the bundle's graph be cleared first.
+
+(no_need_to_clear_version defaults to 0, so by default you never clear.)
+
+Each server instance now gets its own ServerRoot in its http_server/
+directory.
+
+(In order to properly activate this feature you have to give both the
+`configure' subcommand and the `prepare_for_initial_load' subcommand.
+Unfortunately the `prepare_for_initial_load' command won't let you run it a
+second time!  So you can really only get this working if you build a
+database completely from scratch.  Hopefully the only people who will be
+inconvenienced will be my officemates, and I think they can take it...)
+
+The `frontend' bundle can now be loaded by people who want the
+"NeuroCommons query" front page.
+
+The .nt file type is recognized.
+
+			       Release 1.07
+
+Added an LSB boot script for inclusion in /etc/init.d/.
+New commands: database_clear, database_save, database_restore.
+
+			       Release 1.06
+
+Internal release: mostly bug fixes.
+
+Change "read_and_accepted" to "notices_read" in Config files.
+
+			       Release 1.05
+
+Internal release: New .script file format with kludgey interpreter.
+
+			       Release 1.04
+
+Internal release: mostly bug fixes.
+
+The prepare_for_initial_load subcommand now rebuilds the RDF_QUAD table in
+the order: (S, P, O, G).
+
+Includes support for defining and exporting named SQL statements.  (With no
+support for -running- them included!)
+
+			       Release 1.03
+
+This release was put together mostly so we could share it with the folks at
+OpenLink Software.
+
+If you are one of the three people who downloaded version 1.01, you will
+essentially have to start over.  (That won't be as bad as you might think
+given that loading the database is now more than 20 times faster!)  
+
+This release still doesn't perform the final steps of building a
+Neurocommons Mirror.
+
+			       Release 1.02
+
+This was an internal release.
+
+			       Release 1.01
+
+This is the first version good enough to be considered "released".  It
+doesn't, in fact, completely do the job, but it should get 99.9% of your
+database loaded.
+
+____________________________________________________________
+$Id: Changes 3580 2010-08-18 22:51:54Z bawden $

@@ -1,0 +1,619 @@
+
+		      Building a Neurocommons Mirror
+				Alan Bawden
+			Bawden@CreativeCommons.Org
+
+
+1.  Introduction
+================
+
+This document aspires to describe everything you need to know to set up a
+working Neurocommons Mirror.  It is aimed primarily at systems
+administrators.  It includes recommendations for the required hardware,
+instructions for installing the software, loading the initial database, and
+setting up the RDF data feeds.
+
+The most up-to-date version of this document is always available at
+<http://ftp.neurocommons.org/export/NEUROCOMMONS_INSTALL.txt>.  If you are
+reading a copy of this document that you got from somewhere else, you might
+check to see if there is a more recent version available there.
+
+
+2.  Prerequisites
+=================
+
+A Neurocommons Mirror is an instance of OpenLink Software's Virtuoso server
+(virtuoso.openlinksw.com) provisioned with a collection of RDF data feeds.
+You will need adequate hardware to support the fully loaded Virtuoso
+server, the Virtuoso software, some other standard software packages, our
+software for maintaining the data feeds, disk space for staging data, etc.
+
+
+2.1.  Hardware Requirements
+---------------------------
+
+A running Neurocommons Mirror consumes a fair amount of system resources.
+
+2.1.1.  Memory
+
+To run comfortably, you probably need at least 8 Gigabytes of memory.  We
+have found that a Virtuoso configured to use 4 Gigabytes of buffer space
+performs adequately, plus the operating system needs space for its own I/O
+buffers, plus the rest of the system.  It is possible that with careful
+tuning (and depending on your application needs) you can get away with less
+that 8GB -- but you may have to learn a bit about how Virtuoso works to do
+that...
+
+2.1.2.  Disks
+
+You will want Virtuoso to stripe your database across multiple disks.  You
+do not want to be using any form of RAID with these disks.  Virtuoso knows
+how to schedule it's own I/O to a database that it itself distributes over
+multiple disks.  Let Virtuoso do what it knows how to do without putting
+any extra levels of RAID between it and the hardware.  The more disks the
+better.  We used only two disks for our prototype server, but our
+production server uses eight.
+
+You'll need a fair amount of disk space -- but disk space is cheap these
+days.  The Neurocommons Virtuoso database itself currently occupies about
+50 gigabytes, but will be expanding as some of the feeds grow and as new
+feeds are added, so leave yourself plenty of room for growth.  Maybe 300G.
+
+Virtuoso itself sometimes needs temporary disk space, especially when
+loading large files of RDF.  You should plan on leaving a spare 25G on
+whatever disk contains Virtuoso's "working directory".
+
+You'll also need space to store the data feed staging area.  Currently
+that's about 14G.  That will also be growing over time.  I'd allocate at
+least 50G here.
+
+Finally, don't forget to allocate adequate swap space to back your memory.
+With 8GB of memory you'll need to devote at least 16GB to swap partitions.
+Of course you want to avoid swapping at all costs, but in an emergency,
+swapping can still help you limp home and deliver an answer, so don't
+neglect it!  (And disk space is cheap...)
+
+Adding the above numbers up totals less than 400G, not a lot by today's
+standards, but the discussion above will help you partition your disk and
+lay out your file system.  
+
+Faster disks will make things faster, but the Virtuoso developers advise
+that having -more- disks is more important -- spreading your seeks
+over a number of spindles will give you a bigger bang for your buck than
+going for the cutting edge in disk bandwidth.
+
+2.1.3.  CPU
+
+CPU speed isn't particularly important as query processing is mostly I/O
+bound.  Virtuoso does not currently use multiple threads in a way that
+would speed up query processing, so multiple CPUs and multiple cores won't
+help you very much beyond keeping your machine responsive when Virtuoso is
+busy.
+
+We've testing in both 32-bit and 64-bit environments.  But:
+
+  We have never actually loaded all of our data into a 32-bit version of
+  Virtuoso.  The Virtuoso documentation implies that the database
+  architecture supports up to 32 terabytes of data, so it probably works
+  fine.  But we've never tried it.
+
+  We have also never tried configuring a 32-bit Virtuoso to use as much as
+  4GB of buffer space.  Since that would fill the entire process address
+  space it seems unlikely to work!  If you try to run a 32-bit Virtuoso,
+  you will probably have to experiment to find out how little buffer space
+  you can get away with.  And your performance will naturally suffer as a
+  result.
+
+So we recommend that you use a 64-bit Virtuoso.  And for this you will
+naturally need a CPU that supports 64-bit mode.
+
+
+2.2.  Software Requirements
+---------------------------
+
+We've tested on OpenSuSE 10.3 and CentOS 4.4 (essentially RedHat EL 4).  As
+far as we know, everything here should work under any version of Linux.
+Porting to any close Unix relative is probably not too hard.  (E.g., I've
+done a bit of development under FreeBSD -- but I don't have a 64-bit
+FreeBSD machine, so I can't really claim to have tested that fully.)  These
+instructions are written assuming you're using Linux.
+
+2.2.1.  Standard packages
+
+Standard software packages that we require to be installed -- these should
+all install using standard system package management tools:
+
+  Perl
+
+    (You probably have this installed already!)  We've only tested with
+    Perl 5.8.8, but we know of no reason why older versions shouldn't work
+    just fine.
+
+  Perl's DBI module.
+
+    This usually comes packaged as an RPM with a name like "perl-DBI".
+    We've used version 1.52, but even older versions probably work.
+
+  Perl's DBD::ODBC module.
+
+    Usually comes packaged in an RPM with a name like "perl-DBD-ODBC".
+    We've used version 1.13, but even older versions probably work.
+
+    Since this module is essentially just a Perl interface to some C
+    libraries, you need to install the underlying libraries as well.  Here
+    you have a choice (although your Linux distribution may have made it
+    for you), you can install either the unixODBC package, or the iODBC
+    package.  Most people seem to use unixODBC, which is what we do.
+
+    (iODBC probably works just fine -- we just have no experience with it.
+    iODBC is usually packaged in an RPM named "libiodbc".  If you try to
+    use it, please let us know!)
+
+  The unixODBC package.
+
+    The RPM is usually named "unixODBC".  We've used version 2.2.11, but
+    even older versions probably work.
+
+  rsync
+
+    We've used version 2.6.9, but even ancient versions probably work.
+
+(These packages may in turn depend on other packages not listed.)
+
+2.2.2.  Virtuoso
+
+Virtuoso is available in both an Open Source edition and a Commercial
+edition.  Both will work, but we have a patch to Virtuoso (which we hope to
+convince OpenLink to accept some day) that will save you some disk space
+when loading files of compressed RDF, so there is an incentive to build the
+open source version.
+
+[ Actually with RDFHerd versions 1.01 through 1.18, this patch is
+  -required-!  I hope to fix that in the next release, so that you can use
+  a precompiled Virtuoso... ]
+
+The latest version of the Open Source Virtuoso can be downloaded from 
+<http://sourceforge.net/projects/virtuoso/>.  You should be running at
+least version 5.0.8 -- some things will not work as well in older versions.
+
+If you choose to install the open source version, be aware that Virtuoso
+has not been packaged as an RPM by anybody, so you will have to take the
+`make install' route, rather than the `rpm -i' route.
+
+The version of Virtuoso that we most recently compiled (which was 5.0.12)
+required the following additional packages:
+
+    autoconf  2.57
+    automake  1.9
+    libtool   1.5.16
+    flex      2.5.33
+    bison     2.3
+    gperf     2.7.2
+    gawk      3.1.1
+    m4        1.4.1
+    make      3.79.1
+    OpenSSL   0.9.7i
+
+But check the instructions in the README file that came with your copy to
+make sure they haven't changed.
+
+Also check the README for any additional instruction that may apply to your
+particular build environment.  The rest of these instructions apply to
+building a Virtuoso in a Linux environment that builds and runs 64-bit
+executables by default.  If you're going to be trying to build 64-bit
+Virtuoso in a environment that defaults to 32-bits, then you'll need to
+figure out how your Linux distribution handles locating 64-bit libraries
+and include files -- at the very least, you will need to say something like:
+
+    CFLAGS="-m64 -O3"
+
+instead of
+
+    CFLAGS="-O3"
+
+in the following instructions.
+
+Our patch to Virtuoso can be downloaded from:
+<http://ftp.neurocommons.org/export/file_to_string.patch>.  This patch
+applies cleanly to Virtuoso versions at least up through 5.0.11.  Starting
+with Virtuoso 5.0.12, you do not need to apply this patch.
+
+For Virtuoso 5.0.8 only, you also need the patch from:
+<http://ftp.neurocommons.org/export/query_which_returned_nothing.patch>.
+
+To build a fairly minimal Virtuoso, we disable a number of Virtuoso
+features that we know we won't need.  The commands we use to configure
+Virtuoso are:
+
+    patch -b -p0 < path/to/file_to_string.patch			# before 5.0.12
+    patch -b -p0 < path/to/query_which_returned_nothing.patch	# in 5.0.8
+    CFLAGS="-O3"
+    export CFLAGS
+    ./configure --prefix /usr/local/virtuoso --disable-wbxml2		\
+        --disable-imagemagick --disable-bpel-vad --disable-openldap
+
+As an alternative to downloading Virtuoso and our patches separately, you
+can obtain Virtuoso distributions pre-patched with all patches we deem
+necessary from <http://ftp.neurocommons.org/export/>.  E.g., 
+<http://ftp.neurocommons.org/export/virtuoso-opensource-5.0.10.patched.tgz>.
+
+Don't run more than one build at a time -- the build process runs several
+Virtuoso servers during the build, and uses a number of fixed TCP port
+numbers!  (Ports 1111, 1121, 1131, 1112, 5111, 6111, 7111, 8111, 8112,
+maybe others...  You better not be using these yourself for something
+else!)
+
+Also, make sure you don't have a file named /tmp/virt_1111 (or virt_1121,
+or virt_1131, ...) that is owned by a user other than the user running the
+build.  This will cause the build to fail (mysteriously) when it tries to
+fire up a server.
+
+The prefix directory you supply ("/usr/local/virtuoso" in the example
+above) can be anywhere -- we don't depend on any Virtuoso files being
+installed in any of the normal system paths.
+
+To do the build and install, you will want to run, in order, the commands:
+
+    make
+    make check
+    make install
+
+The whole process will take you about an hour on decent hardware.  If you
+run into problems, start by reading the README file that came with the
+Virtuoso distribution.  Try removing some of the the --disable-xxx switches
+to the `configure' command we suggested above.  (In theory, you might think
+that adding more things to the build would make things more likely to go
+wrong, but the developers probably don't test all combinations of options
+on all possible platforms!)
+
+You can also try not setting CFLAGS to "-O3" -- the resulting Virtuoso
+server won't run quite as fast, but you might avoid some problems caused by
+errant compiler optimizations.
+
+Also check out the `virtuoso-users' mailing list at Sourceforge:
+<https://lists.sourceforge.net/lists/listinfo/virtuoso-users>.  Finally the
+Virtuoso Maintainers encouraged us to put their email address,
+<vos.admin@openlinksw.com>, here so that you might consider contacting them
+directly.  (Nice of them!)
+
+2.2.3 RDFHerd
+
+RDFHerd is a Perl module we developed to manage the processing of bundles
+of RDF.  You may pick up the latest distribution of RDFHerd from
+<http://ftp.neurocommons.org/export/RDFHerd-x.yy.tar.gz> (where x.yy is
+the latest version).
+
+There is no RPM for this either yet, but it installs in the standard way
+that Perl modules are always supposed to install:
+
+    perl Makefile.PL
+    make
+    make test
+    make install
+
+As a quick test that the installation worked, issue the command `rdfherd
+--version'.
+
+To finish installing RDFHerd, you need to create a /etc/rdfherd-config.pl
+file.  There is a sample rdfherd-config.pl in the config directory in the
+RDFHerd distribution.  You'll need to modify the first five settings in
+that file to values appropriate for your site.  The comments in the sample
+file should explain everything you need to know.  Except you won't be able
+set "bundle_directory" until after you've set up your data feeds, which is
+the subject of the next section.
+
+(If you're actually updating from a previous version of RDFHerd, be sure to
+read any applicable release notes at the top of the file "Changes".)
+
+
+3.  Data Feeds
+==============
+
+Create a directory to contain all of the data feeds.  Each individual feed
+will supply a subdirectory of this directory with a different "bundle" of
+RDF.  For that reason we often refer to this directory as the "bundle
+directory".  (This is the directory that above I suggested leaving 50G of
+room for, although today it only needs 14G.)
+
+Each data feed is currently available as an rsync "module" from the rsync
+server on rsync.neurocommons.org.  To check that you can talk to the
+server, give the command:
+
+    rsync rsync.neurocommons.org::
+
+This should produce a list of a couple of dozen different modules.
+
+Now you face a choice.  One of these modules, the "full-dump" module,
+contains an image of a Virtuoso database with the Neurocommons data already
+loaded.  Using this, you can get a Neurocommons Mirror up and running much
+faster, but you'll have to download 14G of data.  Alternatively you can
+skip the "full-dump" module, reducing the amount of data you'll need to
+download to just 2.75G, and build the database yourself.  But building the
+database yourself might take 16 hours even on decent hardware.  It's a
+tradeoff only you can decide how to make.
+
+[ Note that we're a bit uncertain how many people are going to try to
+  download this data.  It's not likely to be front page news on Slashdot,
+  but if enough people try to download the entire 14G, that could force us
+  retract the full-dump module to reduce the load... ]
+
+To download the entire 14G, give the following command while in your bundle
+directory:
+
+    for feed in $(rsync rsync.neurocommons.org::) ; do
+	echo "Retrieving $feed..."
+	rsync -a rsync.neurocommons.org::$feed/ $feed/
+    done
+
+To download just the 2.75G of database sources, give the following command
+while in your bundle directory:
+
+    for feed in $(rsync rsync.neurocommons.org::) ; do
+	if [ "$feed" != "full-dump" ] ; then
+	    echo "Retrieving $feed..."
+	    rsync -a rsync.neurocommons.org::$feed/ $feed/
+	fi
+    done
+
+Now you can go back and define bundle_directory in your
+/etc/rdfherd-config.pl file.
+
+
+4.  Configuration
+=================
+
+Now it is time to configure a Virtuoso server instance.  Create a directory
+to be the working directory of the running server.  Virtuoso will create a
+small number of files in this directory, RDFHerd will also keep some files
+here.  (I suggest allocating 25G for this directory -- although most of the
+time that space won't be used.)  Virtuoso itself will sometimes refer to
+this directory as the "Install Directory".
+
+The permissions of this directory will need to be set so that the user ID
+that Virtuoso uses when it runs will have write access.  We recommend that
+you create a "virtuoso" user and group, and use sudo to run the rdfherd
+command as this user.
+
+Of particular interest in this directory are the files:
+
+  Config.pl
+
+    This is the configuration file that turns this directory into an object
+    that RDFHerd understands.  There is a sample version of this file in
+    config/virtuoso-server-Config.pl in the RDFHerd distribution.  You'll
+    need to modify the first eight settings in that file to values
+    appropriate for your server.  The comments in the sample file should
+    explain everything you need to know.  You will definitely need to set
+    http_port and sql_port.  If you want decent performance, you will
+    almost certainly want to set number_of_buffers and max_dirty_buffers.
+
+  virtuoso.ini
+
+    This is the native Virtuoso configuration file.  RDFHerd knows how to
+    create and manipulate this file for you, so you might never need to
+    look here.  You can, however, manually edit this file if you need to.
+
+  virtuoso.log
+
+    Virtuoso sends its diagnostic log output to this file.  So this is a
+    useful place to look to figure out what Virtuoso is doing, and to help
+    diagnose problems.
+
+  Loaded.log
+
+    This is where RDFHerd keeps its record of exactly what it has loaded
+    into the server's database.  Lose or damage this file and RDFHerd will
+    either break, or try to reload everything from scratch.
+
+With a completed Config.pl file in place, you can test that the Virtuoso
+working directory is correctly configured by giving the command:
+
+  rdfherd /virtuoso/working/directory help
+
+Which should print a list of commands starting with "abandon_update" and
+ending with "try_restart".
+
+Now you should be able to create a Virtuoso configuration by giving a
+command like (assuming here that the user "virtuoso" is defined as
+recommended above):
+
+  sudo -u virtuoso rdfherd /virtuoso/working/directory configure
+
+This should create a few files in the Virtuoso working directory including
+a virtuoso.ini file.  In the future, if you change anything in the
+Config.pl file that might be reflected in the native Virtuoso configuration
+(e.g., one of the port numbers) you can simply re-run the configure
+sub-command to update the virtuoso.ini file.
+
+(Since from here on in, every command will need to be executed as the
+"virtuoso" user, I'm going to stop repeating that prefix with every
+command.)
+
+Now you should be able to start a running Virtuoso with the command:
+
+  rdfherd /virtuoso/working/directory start
+
+You can check that Virtuoso started up properly by reading the virtuoso.log
+file -- the server isn't fully operational until a line similar to:
+
+  HH:MM:SS Server online at NNNN (pid PPPP)
+
+appears in this file.
+
+Now would be a good time to set Virtuoso's administrator password.  This
+will also test that the Virtuoso server is operational.  Issue the command: 
+
+  rdfherd /virtuoso/working/directory change_password
+
+This will first prompt you for the initial administrator password, which is
+"dba", and then it will prompt you twice for a new password.  Don't forget
+this new password!
+
+Finally, RDFHerd needs to reconfigure Virtuoso's database schema just a
+bit, so issue the command:
+
+  rdfherd /virtuoso/working/directory prepare_for_initial_load
+
+(This will prompt you for your new administrator password.)
+
+
+5.  Loading
+===========
+
+This section describes how to build a Neurocommons database directly from
+the source bundles.  If you downloaded the "full-dump" module, you can skip
+directly to the next section ("Accelerated Installation"), but I recommend
+reading this section anyway to gain an understanding of how the system
+works.
+
+Now you can get started loading the Neurocommons bundles.  All you should
+need to do is:
+
+  rdfherd /virtuoso/working/directory bundle_update load/master
+
+This will prompt you for the password you configured in the previous
+section.
+
+The "load/master" bundle is defined to depend on all of the other
+Neurocommons bundles, so loading it will cause the entire set of bundles to
+load.
+
+This will take many hours to run.  RDFHerd keeps track of how far the load
+has progressed, so that if we crash part way through we can recover.
+
+To recover from an interrupted or crashed load, simply repeat the command:
+
+  rdfherd /virtuoso/working/directory bundle_update load/master
+
+This time you will (probably) be asked whether you want to resume loading
+the interrupted bundle before proceeding with the overall update operation.
+Answer "yes", and RDFHerd will pick up right where it left off.
+
+The two most likely errors for Virtuoso to throw during loading are:
+
+  SR133: Can not set NULL to not nullable column
+  SR172: Transaction deadlocked
+
+In both cases, you can usually recover by just continuing the load as
+above.  You might have to try continuing more than once.  These errors even
+sometimes happen when loading the very first file of data, so don't panic.
+
+If you want to keep a closer watch on what rdfherd is doing while your
+database loads, you might find running the command:
+
+  tail -f Loaded.log virtuoso.log 
+
+somewhat reassuring.  You won't understand the format of Loaded.log, but
+you will be able to see that progress is being made!
+
+Your fully loaded Neurocommons mirror is now available at:
+
+  http://localhost:NNNN/
+
+where NNNN is the http_port you specified in the Config.pl file.
+
+
+6.  Accelerated Installation
+============================
+
+If you downloaded the "full-dump" module, you can get a Neurocommons mirror
+up and running much quicker than you can using the process described in the
+previous section.  This works by restoring your Virtuoso database from a
+full dump of a database that we built on our server.  (You might worry that
+this full dump might accidentally capture information specific to our site
+and not appropriate to yours.  As far as we can tell, it does not -- but if
+you spot anything, please let us know!)
+
+First you will want to stop and clear the Virtuoso you started running back
+in the "Configuration" section.  It was a useful test to get that Virtuoso
+server up and running with an empty database, but you don't need it
+anymore.  Issue the commands:
+
+  rdfherd /virtuoso/working/dir stop
+  rdfherd /virtuoso/working/dir database_clear
+
+Now restore from the dump image in the "full-dump" module:
+
+  rdfherd /virtuoso/working/dir database_restore /bundle/dir/full-dump
+
+(Where "/bundle/dir/" is replaced with the path of your bundle directory.)
+
+When this completes, you can start the server running again:
+
+  rdfherd /virtuoso/working/dir start
+
+And since you have installed a fresh database, you will need to set the
+password again:
+
+  rdfherd /virtuoso/working/dir change_password
+
+There may be additional updates to the database that aren't yet in the
+distributed dump image, but only exist in the source bundles.  To
+completely bring your server up to date, you should now give the command:
+
+  rdfherd /virtuoso/working/dir bundle_update load/master
+
+Your fully loaded Neurocommons mirror is now available at:
+
+  http://localhost:NNNN/
+
+where NNNN is the http_port you specified in the Config.pl file.
+
+
+7.  Boot Script
+===============
+
+A Linux script that uses rdfherd to start a Virtuoso server every time your
+machine boots, suitable for installation in your /etc/init.d/ directory, is
+included in config/init_script.sh.
+
+In theory, you only need to edit the definition of SERVER_DIR near the
+front of this script, install it in your /etc/init.d/ directory with a
+suitable name, and enable it using the `chkconfig' command.
+
+In practice, there is a lot of variation between Linux distributions in
+this area.  This script should work without modification on SuSE, RedHat,
+or closely related distributions.  It may work on other Linux distributions
+that try to support the LSB specification.  (E.g., it certainly won't work
+on FreeBSD...)
+
+
+8.  Incremental updates
+=======================
+
+From time to time the Neurocommons database will be updated with new data,
+corrections, etc.  We will make such updates available via our rsync
+server.  To update your installation to the most recent version of our
+database, first download the latest bundles:
+
+    for feed in $(rsync rsync.neurocommons.org::) ; do
+	if [ "$feed" != "full-dump" ] ; then
+	    echo "Retrieving $feed..."
+	    rsync -a rsync.neurocommons.org::$feed/ $feed/
+	fi
+    done
+
+Note that this skips updating the "full-dump" module -- downloading a new
+version of that would only be wasted effort if you're trying to update an
+existing installation!
+
+After rsync completes successfully, you can apply the updates with the
+command:
+
+  rdfherd /virtuoso/working/directory bundle_update load/master
+
+Be warned that some updates may require considerable time to complete.  In
+particular, the "inferred-relations" bundle performs a series of
+time-consuming graph manipulations that even on our server can take upwards
+of 9 hours to complete.  So you might want to schedule your updates for
+times when you don't need your server to be available.
+
+
+9.  Tuning
+==========
+
+Is a black art.
+
+
+-----
+$Id: NEUROCOMMONS_INSTALL.txt 2795 2009-12-17 23:45:04Z bawden $

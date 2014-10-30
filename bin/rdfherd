@@ -1,0 +1,430 @@
+#!/usr/bin/perl -w
+#
+# Command line interface to Rdfherd objects.
+#
+# Copyright © 2008-2010  Creative Commons Corp.
+#
+# $Id: rdfherd 3580 2010-08-18 22:51:54Z bawden $
+
+use 5.008_005;
+use strict;
+use integer;
+use Getopt::Long qw();
+use RDFHerd::Utils 1.18_01 qw(hash_compose);
+use RDFHerd 1.18_01;
+use Text::Wrap qw(fill);
+#use DBD::ODBC qw();
+#use English '-no_match_vars';
+#use Fcntl qw(O_RDONLY);
+#use FileHandle;
+#use POSIX qw();
+
+# sysexits.ph might not exist, so...
+use constant {
+    EX_OK		=> 0,
+    EX_USAGE		=> 64,
+    EX_DATAERR		=> 65,
+    EX_NOINPUT		=> 66,
+    EX_NOUSER		=> 67,
+    EX_NOHOST		=> 68,
+    EX_UNAVAILABLE	=> 69,
+    EX_SOFTWARE		=> 70,
+    EX_OSERR		=> 71,
+    EX_OSFILE		=> 72,
+    EX_CANTCREAT	=> 73,
+    EX_IOERR		=> 74,
+    EX_TEMPFAIL		=> 75,
+    EX_PROTOCOL		=> 76,
+    EX_NOPERM		=> 77,
+    EX_CONFIG		=> 78,
+};
+
+sub usage ($);
+
+my $debug = 0;
+my $version = 0;
+
+my %default_command_table = (
+    help => {
+	proc => \&cmd_help,
+	usage => "[<sub-command>]",
+	maxargs => 1,
+	doc => "List all available sub-commands, or describe <sub-command>.",
+    },
+    config_string => {
+	proc => \&cmd_config_string,
+	usage => "<param>",
+	args => 1,
+	doc => "Display the configuration string <param>.",
+    },
+    config_path => {
+	proc => \&cmd_config_path,
+	usage => "<param>",
+	args => 1,
+	doc => "Display the configuration pathname <param>.",
+    },
+    config_ref => {
+	proc => \&cmd_config_ref,
+	usage => "<param> <key_or_index>",
+	args => 2,
+	doc => "Display the configuration hash (or array) <param> at the given <key_or_index>.",
+    },
+    show => {
+	proc => \&cmd_show,
+	doc => "Show the implementation of the object.\n\t(For debugging...)",
+    },
+    test => {
+	proc => \&cmd_test,
+	maxargs => '*',
+	doc => "Tests something...",
+    },
+);
+
+my %state_command_table = (
+    state_read => {
+	proc => \&cmd_state_read,
+	usage => "<key>",
+	args => 1,
+	doc => "Display the value of <key>.",
+    },
+    state_write => {
+	proc => \&cmd_state_write,
+	usage => "<key> <value>",
+	args => 2,
+	doc => "Set the value of <key> to <value>.",
+    },
+    state_delete => {
+	proc => \&cmd_state_delete,
+	usage => "<key>",
+	args => 1,
+	doc => "Make the value of <key> undefined.",
+    },
+    state_clear => {
+	proc => \&cmd_state_clear,
+	doc => "Erase all state.",
+    },
+);
+
+sub full_command_table ($) {
+    my ($x) = @_;
+    my $cmdtab = hash_compose($x->command_table, \%default_command_table);
+    if ($x->state_supported) {
+	$cmdtab = hash_compose($cmdtab, \%state_command_table);
+    }
+    return $cmdtab;
+}
+
+Getopt::Long::Configure('require_order');
+Getopt::Long::GetOptions(
+	   "debug" => \$debug,
+	   "version" => \$version,
+	   )
+    or usage("<arg>...");
+
+if ($version) {
+    print "RDFHerd ", $RDFHerd::VERSION, " (1.18-patches)\n";
+#    print "Using DBD::ODBC ", $DBD::ODBC::VERSION, "\n";
+    exit(EX_OK);
+}
+
+(@ARGV >= 1) or usage("<arg>...");
+my $path = shift(@ARGV);
+
+my $x = new RDFHerd($path);
+
+if ($debug) {
+    while (my ($k, $v) = each(%{$x})) {
+	print STDERR "$k => $v\n";
+    }
+}
+
+my $rv = &{$x->command_line_handler || \&do_command}($x, @ARGV);
+
+defined($rv) or $rv = "<<undefined>>";
+
+if ($rv eq 'OK') {
+    exit(EX_OK);
+} else {
+    print STDERR "The sub-command returned an unexpected value: $rv\n";
+    exit(EX_SOFTWARE);
+}
+
+sub usage ($) {
+    print STDERR "Usage: rdfherd" .
+	" [--debug]" .
+	" [--version]" .
+	" <path> " . $_[0] . "\n";
+    exit(EX_USAGE);
+}
+
+#
+# Default command line handler
+#
+
+# Methods with names that start "cmd_" are intended to be directly called
+# as commands.  They are allowed to generate messages for the user, and may
+# call exit() if something abnormal happens.  If convenient, they should
+# return 'OK' instead of doing exit(0) if all goes well.
+
+sub command_description ($$) {
+    full_command_table($_[0])->{$_[1]};
+}
+
+sub get_usage($$) {
+    my ($cmd, $desc) = @_;
+    my $usage = $desc->{usage};
+    if ($usage) {
+	return $cmd . " " . $usage;
+    } else {
+	return $cmd;
+    }
+}
+
+sub do_command {
+    my $x = shift;
+    my $cmd = shift;
+    unless ($cmd) {
+	usage("<sub-command> <arg>...");
+    }
+    my $desc = command_description($x, $cmd) || {
+	proc => \&cmd_unknown,
+	maxargs => '*',
+    };
+
+    # Only 'proc' is required to exist in $desc.
+    my $proc = $desc->{proc} or
+	die "BUG!  Missing $cmd procedure: $x\n";
+
+    my $options = $desc->{options} || {};
+    @ARGV = @_;
+    Getopt::Long::GetOptions(%{$options})
+	or usage(get_usage($cmd, $desc));
+
+    my $min_args = $desc->{args};
+    defined($min_args) or $min_args = 0;
+    my $max_args = $desc->{maxargs};
+    defined($max_args) or $max_args = $min_args;
+    my $args = @ARGV;
+    if (($max_args ne '*' && $args > $max_args) ||
+	($args < $min_args)) {
+	usage(get_usage($cmd, $desc));
+    }
+
+    return &{$proc}($x, $cmd, @ARGV);
+}
+
+sub list_commands ($) {
+    my $x = shift;
+    my $cname = $x->class_name;
+    my $cmdtab = full_command_table($x);
+    print "A $cname supports the following sub-commands:\n";
+    for my $cmd (sort(keys(%$cmdtab))) {
+	print "    ", get_usage($cmd, $cmdtab->{$cmd}), "\n";
+    }
+}
+
+sub cmd_unknown {
+    my ($x, $cmd) = @_;
+    local *STDOUT = *STDERR;
+    print "Unknown sub-command: $cmd\n";
+    list_commands($x);
+    exit(EX_USAGE);
+}
+
+sub cmd_help {
+    my ($x, undef, $cmd) = @_;
+    if (defined($cmd)) {
+	my $desc = command_description($x, $cmd);
+	if (!$desc) {
+	    print "There is no $cmd sub-command!\n";
+	} else {
+	    my $doc = $desc->{doc};
+	    print "\n    ", get_usage($cmd, $desc), "\n\n";
+	    if ($doc) {
+		print fill("\t", "\t", $doc), "\n\n";
+	    } else {
+		print "\tThe $cmd sub-command has no documentation...\n\n";
+	    }
+	}
+    } else {
+	list_commands($x);
+    }
+    'OK';
+}
+
+sub show_tbl ($) {
+    my ($tbl) = @_;
+    for my $key (sort(keys(%{$tbl}))) {
+	print "  $key => ", $tbl->{$key}, "\n";
+    }
+}
+
+sub cmd_show {
+    my ($x) = @_;
+    print "Data:\n";
+    show_tbl($x);
+    print "Config:\n";
+    show_tbl($x->config);
+    if ($x->state_supported) {
+	print "State:\n";
+	$x->state_foreach(sub {
+	    print "  ", $_[1], " => ", $_[2], "\n";
+        });
+    }
+    'OK';
+}
+
+sub cmd_config_string {
+    my ($x, undef, $param) = @_;
+    print $x->config_string($param), "\n";
+    'OK';
+}
+
+sub cmd_config_path {
+    my ($x, undef, $param) = @_;
+    print $x->config_path($param), "\n";
+    'OK';
+}
+
+sub cmd_config_ref {
+    my ($x, undef, $param, $key) = @_;
+    print $x->config_ref($param, $key), "\n";
+    'OK';
+}
+
+sub cmd_state_read {
+    my ($x, undef, $var) = @_;
+    my $val = $x->state_read($var);
+    if (defined($val)) {
+	print "$var = \"$val\"\n";
+    } else {
+	print "$var is undefined\n";
+    }
+    'OK';
+}
+
+sub cmd_state_write {
+    my ($x, undef, $var, $val) = @_;
+    $x->state_write($var, $val);
+    'OK';
+}
+
+sub cmd_state_delete {
+    my ($x, undef, $var) = @_;
+    $x->state_delete($var);
+    'OK';
+}
+
+sub cmd_state_clear {
+    my ($x) = @_;
+    $x->state_clear();
+    'OK';
+}
+
+# Test locking
+sub cmd_test {
+    my ($x, undef, $flag) = @_;
+    if ($flag) {
+	$x->state_lock_for_read();
+    } else {
+	$x->state_lock();
+    }
+    print "waiting: ";
+    <STDIN>;
+    'OK';
+}
+
+__END__
+#
+# Old Test Code
+#
+
+# Test dbi_connect
+sub cmd_test {
+    my ($x, undef) = @_;
+    my $v = $x->open_connection();
+    if ($v) {
+	die "$v\n";
+    }
+    $x->close_connection();
+    'OK';
+}
+
+# Test read_hash/write_hash
+sub cmd_test {
+    while (my $h = read_hash(*STDIN)) {
+	write_hash(*STDOUT, $h);
+    }
+    'OK';
+}
+
+
+=head1 NAME
+
+rdfherd - Command line interface to RDFHerd objects.
+
+=head1 SYNOPSIS
+
+B<rdfherd>
+[I<options>]
+I<object-path>
+I<sub-command>
+[I<sub-options>]
+[I<arguments>]
+
+B<rdfherd>
+[I<options>]
+I<object-path>
+B<help>
+[I<sub-command>]
+
+B<rdfherd>
+[I<options>]
+I<object-path>
+B<show>
+
+=head1 DESCRIPTION
+
+This is a generic command-line interface for RDFHerd objects.  Each object
+is a directory in the filesystem that contains a Config.pl file.  The
+Config.pl file determines the class of the object.  The class of the object
+determines the available sub-commands.
+
+=head1 OPTIONS
+
+The only useful global option is B<--version> which prints the version of
+RDFHerd.
+
+=head1 SUB-COMMANDS
+
+Use the B<help> sub-command to list the available sub-commands for an
+object and to get brief documentation for what each sub-command does.
+
+=begin comment
+
+=head1 EXAMPLES
+
+=end comment
+
+=head1 SEE ALSO
+
+L<RDFHerd(3)>,
+L<RDFHerd::Bundle(3)>,
+L<RDFHerd::Virtuoso::Server(3)>.
+
+=head1 AUTHOR
+
+Alan Bawden <Bawden@CreativeCommons.Org>
+
+=head1 LICENSE
+
+Copyright (c) 2008-2010, Creative Commons Corp.
+
+See the file F<LICENSE> in the RDFHerd distribution.
+
+=cut
+
+
+# Local Variables:
+# mode: Perl
+# End:
